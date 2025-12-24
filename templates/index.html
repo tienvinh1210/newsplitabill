@@ -260,11 +260,45 @@
             border: 1px solid #ccc; background: #fff; padding: 5px; 
             width: 200px; font-size: 12px; margin-left: 10px; border-radius: 4px;
         }
+
+        .session-bar {
+            display: flex; 
+            gap: 8px; 
+            align-items: center; 
+            padding: 10px 0; 
+            flex-wrap: wrap;
+        }
+        .session-bar button {
+            background: #000; color: #fff; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-weight: 700;
+        }
+        .session-bar button:hover { opacity: 0.9; }
+        .session-info { font-size: 13px; color: #333; }
     </style>
 </head>
 <body>
 
     <h1>Bill Splitter</h1>
+    <!-- Home screen -->
+    <div id="homeRoot">
+        <p class="section-note">
+            Create a new shared bill link, then send that link to your friends.  
+            Anyone with the link can edit the bill.
+        </p>
+        <div style="margin: 20px 0;">
+            <button class="btn-calc" style="max-width: 260px;" onclick="startNewBill()">
+                Create New Bill Link
+            </button>
+        </div>
+    </div>
+
+    <!-- Main app UI, hidden until a session is active -->
+    <div id="appRoot" style="display: none;">
+        <div class="session-bar">
+            <button onclick="newSession()">New shared link</button>
+            <button onclick="saveSession()">Save</button>
+            <button onclick="refreshSession()">Refresh</button>
+            <span id="sessionInfo" class="session-info">Not shared yet</span>
+        </div>
 
     <div class="section" id="s1">
         <h2>1. Consumption</h2>
@@ -370,7 +404,117 @@
             payments: [],
             covers: []
         };
+        let sessionId = null;
         const TAG_COLORS = ['#d32f2f', '#1976d2', '#388e3c', '#fbc02d', '#7b1fa2', '#f57c00', '#0097a7', '#5d4037'];
+
+        function showHome() {
+            const home = document.getElementById('homeRoot');
+            const app = document.getElementById('appRoot');
+            if (home) home.style.display = 'block';
+            if (app) app.style.display = 'none';
+        }
+
+        function showApp() {
+            const home = document.getElementById('homeRoot');
+            const app = document.getElementById('appRoot');
+            if (home) home.style.display = 'none';
+            if (app) app.style.display = 'block';
+        }
+
+        function getShareUrl(id) {
+            return `${window.location.origin}${window.location.pathname}?id=${id}`;
+        }
+
+        function updateSessionInfo() {
+            const el = document.getElementById('sessionInfo');
+            if (!el) return;
+            if (!sessionId) {
+                el.innerText = 'Not shared yet';
+                return;
+            }
+            const url = getShareUrl(sessionId);
+            el.innerHTML = `Link: <a href="${url}" target="_blank" rel="noreferrer">${url}</a>`;
+        }
+
+        async function startNewBill() {
+            await newSession();
+            showApp();
+            render();
+        }
+
+        async function newSession() {
+            const res = await fetch('/sessions', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state})
+            });
+            if (!res.ok) {
+                alert('Failed to create session');
+                return;
+            }
+            const data = await res.json();
+            sessionId = data.id;
+            window.history.replaceState({}, '', `?id=${sessionId}`);
+            updateSessionInfo();
+            alert('Shared link created. Others can edit using the link.');
+            showApp();
+        }
+
+        async function saveSession() {
+            if (!sessionId) {
+                await newSession();
+                return;
+            }
+            const res = await fetch(`/sessions/${sessionId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state})
+            });
+            if (!res.ok) {
+                alert('Failed to save session');
+                return;
+            }
+            updateSessionInfo();
+        }
+
+        async function loadSessionById(id) {
+            const res = await fetch(`/sessions/${id}`);
+            if (!res.ok) {
+                throw new Error('Session not found');
+            }
+            const data = await res.json();
+            state = data.state;
+            sessionId = id;
+            window.history.replaceState({}, '', `?id=${sessionId}`);
+            updateSessionInfo();
+            showApp();
+            render();
+        }
+
+        async function refreshSession() {
+            if (!sessionId) return;
+            try {
+                await loadSessionById(sessionId);
+            } catch (e) {
+                alert('Failed to refresh session: ' + e.message);
+            }
+        }
+
+        async function initSessionFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const id = params.get('id');
+            updateSessionInfo();
+            if (id) {
+                try {
+                    await loadSessionById(id);
+                    return;
+                } catch (e) {
+                    console.error(e);
+                    alert('Could not load shared session. Starting a fresh one.');
+                }
+            }
+            showHome();
+        }
         function getPersonColor(pid) {
             if (!state.colors[pid]) {
                 // Assign a random deterministic color if not set
@@ -620,7 +764,7 @@
                 }
             });
         }
-        render();
+        initSessionFromUrl();
     </script>
 </body>
 </html>
