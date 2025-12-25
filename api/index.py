@@ -12,8 +12,14 @@ import asyncio
 app = FastAPI()
 
 # Setup Templates
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-templates = Jinja2Templates(directory=os.path.join(base_dir, "templates"))
+# For Vercel: templates are in project root
+# For local: templates are relative to api directory
+if os.path.exists("templates"):
+    templates_dir = "templates"
+else:
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    templates_dir = os.path.join(base_dir, "templates")
+templates = Jinja2Templates(directory=templates_dir)
 
 # --- Database ---
 # Use DATABASE_URL from environment variable
@@ -259,3 +265,6 @@ async def calculate_split(data: BillData):
             balances = [b for b in balances if abs(b["amount"]) > 0.01]
 
     return {"settlements": settlements}
+
+# Export handler for Vercel
+handler = app
