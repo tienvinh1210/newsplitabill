@@ -12,13 +12,13 @@ import asyncio
 app = FastAPI()
 
 # Setup Templates
-# For Vercel: templates are in project root
+# For Vercel: templates are in project root relative to api/
 # For local: templates are relative to api directory
-if os.path.exists("templates"):
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+templates_dir = os.path.join(base_dir, "templates")
+# Fallback: check if templates exists in current directory (Vercel)
+if not os.path.exists(templates_dir):
     templates_dir = "templates"
-else:
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    templates_dir = os.path.join(base_dir, "templates")
 templates = Jinja2Templates(directory=templates_dir)
 
 # --- Database ---
@@ -41,11 +41,11 @@ async def get_pool():
         _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
     return _pool
 
-@app.on_event("startup")
-async def startup():
-    # Only create table in non-serverless environments
-    # In Vercel, you should create the table manually via migration or SQL tool
-    if not os.getenv("VERCEL"):
+# Startup event - only run in non-serverless environments
+# Vercel serverless functions don't support startup events reliably
+if not os.getenv("VERCEL"):
+    @app.on_event("startup")
+    async def startup():
         try:
             pool = await get_pool()
             async with pool.acquire() as conn:
@@ -59,12 +59,14 @@ async def startup():
         except Exception as e:
             print(f"Warning: Could not create table (might already exist): {e}")
 
-@app.on_event("shutdown")
-async def shutdown():
-    global _pool
-    if _pool:
-        await _pool.close()
-        _pool = None
+# Shutdown event - only in non-serverless
+if not os.getenv("VERCEL"):
+    @app.on_event("shutdown")
+    async def shutdown():
+        global _pool
+        if _pool:
+            await _pool.close()
+            _pool = None
 
 # --- Data Models ---
 class Dish(BaseModel):
@@ -267,4 +269,5 @@ async def calculate_split(data: BillData):
     return {"settlements": settlements}
 
 # Export handler for Vercel
-handler = app
+# Vercel's @vercel/python runtime automatically detects FastAPI apps
+# The app variable is automatically used as the handler
