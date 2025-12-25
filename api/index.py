@@ -37,8 +37,25 @@ _pool = None
 
 async def get_pool():
     global _pool
-    if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+    # In serverless (Vercel), connection pooling can be problematic
+    # Create a new pool if it doesn't exist or if we're in serverless
+    if _pool is None or os.getenv("VERCEL"):
+        try:
+            if _pool and os.getenv("VERCEL"):
+                # Close old pool in serverless before creating new one
+                try:
+                    await _pool.close()
+                except:
+                    pass
+            _pool = await asyncpg.create_pool(
+                DATABASE_URL, 
+                min_size=1, 
+                max_size=2,  # Smaller pool for serverless
+                command_timeout=10  # Timeout for serverless
+            )
+        except Exception as e:
+            print(f"Error creating database pool: {str(e)}")
+            raise
     return _pool
 
 # Startup event - only run in non-serverless environments
@@ -107,43 +124,59 @@ async def read_root(request: Request):
 
 @app.post("/sessions")
 async def create_session(payload: SessionPayload):
-    pool = await get_pool()
-    session_id = uuid.uuid4().hex
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
-            session_id,
-            json.dumps(payload.state),
-        )
-    return {"id": session_id}
+    try:
+        pool = await get_pool()
+        session_id = uuid.uuid4().hex
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
+                session_id,
+                json.dumps(payload.state),
+            )
+        return {"id": session_id}
+    except Exception as e:
+        print(f"Error creating session: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
 
 @app.get("/sessions/{session_id}")
 async def get_session(session_id: str):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Session not found")
-    # state is stored as JSONB; ensure we return a dict
-    raw_state = row["state"]
-    if isinstance(raw_state, str):
-        state = json.loads(raw_state)
-    else:
-        state = raw_state
-    return {"id": session_id, "state": state}
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Session not found")
+        # state is stored as JSONB; ensure we return a dict
+        raw_state = row["state"]
+        if isinstance(raw_state, str):
+            state = json.loads(raw_state)
+        else:
+            state = raw_state
+        return {"id": session_id, "state": state}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting session: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get session: {str(e)}")
 
 @app.put("/sessions/{session_id}")
 async def update_session(session_id: str, payload: SessionPayload):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        result = await conn.execute(
-            "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
-            json.dumps(payload.state),
-            session_id,
-        )
-    if result.endswith("UPDATE 0"):
-        raise HTTPException(status_code=404, detail="Session not found")
-    return {"id": session_id}
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
+                json.dumps(payload.state),
+                session_id,
+            )
+        if result.endswith("UPDATE 0"):
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"id": session_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating session: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
 
 @app.post("/calculate")
 async def calculate_split(data: BillData):
