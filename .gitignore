@@ -5,4 +5,4 @@ __pycache__/
 
 # Files with sensitive information (connection strings, passwords)
 VERCEL_DEPLOY_CHECKLIST.md
-HOW_TO_IMPORT_REPO_VERCEL.md
+HOW_TO_IMPORT_REPO_VERCEL.md.DS_Store
