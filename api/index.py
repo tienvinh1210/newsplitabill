@@ -32,8 +32,33 @@ if not DATABASE_URL:
         "Set it for local development or configure it in Vercel environment variables."
     )
 
+# Normalize connection string: asyncpg accepts both postgres:// and postgresql://
+# But we need to ensure SSL is enabled for Supabase/cloud databases
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgres://", 1)
+
 # Global pool for connection reuse (works in both local and serverless)
 _pool = None
+_table_created = False
+
+async def ensure_table_exists(conn):
+    """Ensure the sessions table exists (for Vercel where startup events don't run)"""
+    global _table_created
+    if _table_created:
+        return
+    try:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                state JSONB NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        _table_created = True
+    except Exception as e:
+        print(f"Warning: Could not create table (might already exist): {e}")
+        # Don't set _table_created = True here, so we'll retry next time
+        # This handles the case where table creation fails but table already exists
 
 async def get_pool():
     global _pool
@@ -47,8 +72,24 @@ async def get_pool():
                     await _pool.close()
                 except:
                     pass
+            
+            # Determine if we need SSL (Supabase and most cloud DBs require it)
+            # Check if the host is not localhost/127.0.0.1
+            needs_ssl = True  # Default to SSL for safety
+            if "localhost" in DATABASE_URL or "127.0.0.1" in DATABASE_URL:
+                needs_ssl = False
+            
+            # For Supabase, ensure SSL is enabled
+            # asyncpg accepts ssl=True/False, or we can add ?sslmode=require to the URL
+            # If connection string doesn't already have sslmode, add it for cloud DBs
+            db_url = DATABASE_URL
+            if needs_ssl and "sslmode" not in db_url:
+                separator = "&" if "?" in db_url else "?"
+                db_url = f"{db_url}{separator}sslmode=require"
+            
+            # Create pool with SSL for cloud databases
             _pool = await asyncpg.create_pool(
-                DATABASE_URL, 
+                db_url, 
                 min_size=1, 
                 max_size=2,  # Smaller pool for serverless
                 command_timeout=10  # Timeout for serverless
@@ -128,6 +169,8 @@ async def create_session(payload: SessionPayload):
         pool = await get_pool()
         session_id = uuid.uuid4().hex
         async with pool.acquire() as conn:
+            # Ensure table exists (important for Vercel where startup events don't run)
+            await ensure_table_exists(conn)
             await conn.execute(
                 "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
                 session_id,
@@ -143,6 +186,8 @@ async def get_session(session_id: str):
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # Ensure table exists
+            await ensure_table_exists(conn)
             row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
         if not row:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -164,6 +209,8 @@ async def update_session(session_id: str, payload: SessionPayload):
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # Ensure table exists
+            await ensure_table_exists(conn)
             result = await conn.execute(
                 "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
                 json.dumps(payload.state),
