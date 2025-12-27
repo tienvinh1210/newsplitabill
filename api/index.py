@@ -79,6 +79,9 @@ async def get_pool():
             if "localhost" in DATABASE_URL or "127.0.0.1" in DATABASE_URL:
                 needs_ssl = False
             
+            # Check if using session pooler (usually has "pooler" in hostname or port 6543)
+            is_pooler = "pooler" in DATABASE_URL.lower() or ":6543" in DATABASE_URL
+            
             # For Supabase, ensure SSL is enabled
             # asyncpg accepts ssl=True/False, or we can add ?sslmode=require to the URL
             # If connection string doesn't already have sslmode, add it for cloud DBs
@@ -87,12 +90,17 @@ async def get_pool():
                 separator = "&" if "?" in db_url else "?"
                 db_url = f"{db_url}{separator}sslmode=require"
             
+            # For session poolers, use smaller pool and shorter timeout
+            # Session poolers handle connection management differently
+            pool_size = 1 if is_pooler else 2
+            timeout = 5 if is_pooler else 10
+            
             # Create pool with SSL for cloud databases
             _pool = await asyncpg.create_pool(
                 db_url, 
                 min_size=1, 
-                max_size=2,  # Smaller pool for serverless
-                command_timeout=10  # Timeout for serverless
+                max_size=pool_size,  # Smaller pool for session poolers
+                command_timeout=timeout  # Shorter timeout for session poolers
             )
         except Exception as e:
             print(f"Error creating database pool: {str(e)}")
@@ -171,11 +179,13 @@ async def create_session(payload: SessionPayload):
         async with pool.acquire() as conn:
             # Ensure table exists (important for Vercel where startup events don't run)
             await ensure_table_exists(conn)
-            await conn.execute(
-                "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
-                session_id,
-                json.dumps(payload.state),
-            )
+            # Use explicit transaction for session pooler compatibility
+            async with conn.transaction():
+                await conn.execute(
+                    "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
+                    session_id,
+                    json.dumps(payload.state),
+                )
         return {"id": session_id}
     except Exception as e:
         print(f"Error creating session: {str(e)}")
@@ -188,7 +198,9 @@ async def get_session(session_id: str):
         async with pool.acquire() as conn:
             # Ensure table exists
             await ensure_table_exists(conn)
-            row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
+            # Use explicit transaction for session pooler compatibility
+            async with conn.transaction():
+                row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
         if not row:
             raise HTTPException(status_code=404, detail="Session not found")
         # state is stored as JSONB; ensure we return a dict
@@ -202,6 +214,7 @@ async def get_session(session_id: str):
         raise
     except Exception as e:
         print(f"Error getting session: {str(e)}")
+        print(f"Session ID: {session_id}")
         raise HTTPException(status_code=500, detail=f"Failed to get session: {str(e)}")
 
 @app.put("/sessions/{session_id}")
@@ -211,11 +224,13 @@ async def update_session(session_id: str, payload: SessionPayload):
         async with pool.acquire() as conn:
             # Ensure table exists
             await ensure_table_exists(conn)
-            result = await conn.execute(
-                "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
-                json.dumps(payload.state),
-                session_id,
-            )
+            # Use explicit transaction for session pooler compatibility
+            async with conn.transaction():
+                result = await conn.execute(
+                    "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
+                    json.dumps(payload.state),
+                    session_id,
+                )
         if result.endswith("UPDATE 0"):
             raise HTTPException(status_code=404, detail="Session not found")
         return {"id": session_id}
@@ -223,6 +238,8 @@ async def update_session(session_id: str, payload: SessionPayload):
         raise
     except Exception as e:
         print(f"Error updating session: {str(e)}")
+        print(f"Session ID: {session_id}")
+        print(f"Payload state keys: {list(payload.state.keys()) if isinstance(payload.state, dict) else 'N/A'}")
         raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
 
 @app.post("/calculate")

@@ -477,6 +477,36 @@
             updateSessionInfo();
         }
 
+        // Auto-save with debouncing (saves 1 second after last change)
+        let autoSaveTimeout = null;
+        function autoSave() {
+            if (!sessionId) return; // Don't auto-save if no session exists
+            
+            // Clear existing timeout
+            if (autoSaveTimeout) {
+                clearTimeout(autoSaveTimeout);
+            }
+            
+            // Set new timeout to save after 1 second of inactivity
+            autoSaveTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/sessions/${sessionId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({state})
+                    });
+                    if (res.ok) {
+                        // Silently save - no alert on success
+                        console.log('Auto-saved');
+                    } else {
+                        console.error('Auto-save failed');
+                    }
+                } catch (e) {
+                    console.error('Auto-save error:', e);
+                }
+            }, 1000); // Wait 1 second after last change
+        }
+
         async function loadSessionById(id) {
             const res = await fetch(`/sessions/${id}`);
             if (!res.ok) {
@@ -570,13 +600,13 @@
                     <div class="dish-row-header">
                         <div class="dish-inputs">
                             <textarea class="dish-name-input" 
-                                      onchange="updateDishName('${d.id}', this.value)" 
+                                      onchange="updateDishName('${d.id}', this.value); autoSave();" 
                                       onkeydown="handleEnter(event)" 
                                       placeholder="Item...">${d.name}</textarea>
                             
                             <div class="dish-price-wrap">
                                 $ <input class="dish-price" type="number" value="${d.price}" 
-                                         onchange="updateDishPrice('${d.id}', this.value)" 
+                                         onchange="updateDishPrice('${d.id}', this.value); autoSave();" 
                                          onkeydown="handleEnter(event)" placeholder="0">
                             </div>
                         </div>
@@ -623,7 +653,7 @@
                     <td>
                         <div style="display:flex; align-items:center;">
                             <div class="person-tag" style="background:${pColor}; width:10px; height:20px;">&nbsp;</div>
-                            <select onchange="state.payments[${idx}].person_id = this.value; render();" 
+                            <select onchange="state.payments[${idx}].person_id = this.value; render(); autoSave();" 
                                     style="width:90%; border:none; background:transparent;">
                                 ${state.people.map(p => `<option value="${p.id}" ${p.id === pay.person_id ? 'selected':''}>${p.name}</option>`).join('')}
                             </select>
@@ -632,7 +662,7 @@
                     <td>
                         <div style="display:flex; align-items:center;">
                             <input type="number" value="${pay.amount}" 
-                                onchange="state.payments[${idx}].amount = parseFloat(this.value); render();" 
+                                onchange="state.payments[${idx}].amount = parseFloat(this.value); render(); autoSave();" 
                                 onkeydown="handleEnter(event)">
                             
                             <button class="btn-action" title="Set to Total Bill"
@@ -642,7 +672,7 @@
                                 onclick="updatePaymentAmount(${idx}, ${totalBill} - ${totalPaidCurrently} + ${pay.amount})">Max</button>
                         </div>
                     </td>
-                    <td><button class="btn-sm" onclick="state.payments.splice(${idx},1); renderPayments();">x</button></td>
+                    <td><button class="btn-sm" onclick="state.payments.splice(${idx},1); renderPayments(); autoSave();">x</button></td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -653,6 +683,7 @@
             // Prevent negative amounts
             state.payments[index].amount = Math.max(0, parseFloat(amount.toFixed(2)));
             renderPayments();
+            autoSave();
         }
 
         function renderCovers() {
@@ -661,23 +692,23 @@
             state.covers.forEach((cov, idx) => {
                 let tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td><select onchange="state.covers[${idx}].person_id = this.value" style="width:100%; border:none; background:transparent;">
+                    <td><select onchange="state.covers[${idx}].person_id = this.value; autoSave();" style="width:100%; border:none; background:transparent;">
                         ${state.people.map(p => `<option value="${p.id}" ${p.id === cov.person_id ? 'selected':''}>${p.name}</option>`).join('')}
                     </select></td>
-                    <td><input type="number" value="${cov.amount}" onchange="state.covers[${idx}].amount = parseFloat(this.value)" onkeydown="handleEnter(event)"></td>
-                    <td><button class="btn-sm" onclick="state.covers.splice(${idx},1); renderCovers();">x</button></td>
+                    <td><input type="number" value="${cov.amount}" onchange="state.covers[${idx}].amount = parseFloat(this.value); autoSave();" onkeydown="handleEnter(event)"></td>
+                    <td><button class="btn-sm" onclick="state.covers.splice(${idx},1); renderCovers(); autoSave();">x</button></td>
                 `;
                 tbody.appendChild(tr);
             });
         }
 
-        function addDish() { state.dishes.push({id: 'd'+Date.now(), name: 'New Item', price: 0}); render(); }
-        function delDish(id) { state.dishes = state.dishes.filter(d => d.id !== id); render(); }
-        function addPerson() { state.people.push({id: 'p'+Date.now(), name: 'Name'}); render(); }
-        function delPerson(id) { state.people = state.people.filter(p => p.id !== id); render(); }
-        function updateDishName(id, val) { state.dishes.find(d => d.id === id).name = val; }
-        function updateDishPrice(id, val) { state.dishes.find(d => d.id === id).price = parseFloat(val) || 0; }
-        function updatePersonName(id, val) { state.people.find(p => p.id === id).name = val; render(); }
+        function addDish() { state.dishes.push({id: 'd'+Date.now(), name: 'New Item', price: 0}); render(); autoSave(); }
+        function delDish(id) { state.dishes = state.dishes.filter(d => d.id !== id); render(); autoSave(); }
+        function addPerson() { state.people.push({id: 'p'+Date.now(), name: 'Name'}); render(); autoSave(); }
+        function delPerson(id) { state.people = state.people.filter(p => p.id !== id); render(); autoSave(); }
+        function updateDishName(id, val) { state.dishes.find(d => d.id === id).name = val; autoSave(); }
+        function updateDishPrice(id, val) { state.dishes.find(d => d.id === id).price = parseFloat(val) || 0; autoSave(); }
+        function updatePersonName(id, val) { state.people.find(p => p.id === id).name = val; render(); autoSave(); }
         function modRatio(pid, did, delta) {
             if (!state.ratios[pid]) state.ratios[pid] = {};
             const current = state.ratios[pid][did] || 0;
@@ -685,9 +716,10 @@
             if (newVal < 0) return;
             state.ratios[pid][did] = newVal;
             render();
+            autoSave();
         }
-        function addPaymentRow() { if(state.people.length) state.payments.push({person_id: state.people[0].id, amount: 0}); renderPayments(); }
-        function addCoverRow() { if(state.people.length) state.covers.push({person_id: state.people[0].id, amount: 0}); renderCovers(); }
+        function addPaymentRow() { if(state.people.length) state.payments.push({person_id: state.people[0].id, amount: 0}); renderPayments(); autoSave(); }
+        function addCoverRow() { if(state.people.length) state.covers.push({person_id: state.people[0].id, amount: 0}); renderCovers(); autoSave(); }
         function saveData() { document.getElementById('jsonArea').value = JSON.stringify(state, null, 2); }
         function loadData() { try { state = JSON.parse(document.getElementById('jsonArea').value); render(); } catch(e) { alert('Invalid JSON data'); } }
 
@@ -763,6 +795,9 @@
                     input.value = value;
                 }
             });
+            
+            // 3. Auto-save
+            autoSave();
         }
         initSessionFromUrl();
     </script>
