@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bill Splitter</title>
+    <style>
+        :root { 
+            --border: #e0e0e0; 
+            --bg: #fff; 
+            --text: #1a1a1a; 
+            --accent: #000; 
+            --subtle: #888; 
+            --hover-bg: #f9f9f9;
+            
+            /* Desktop Defaults */
+            --header-height: 60px;
+            --row-height: 65px;
+            --first-col-width: 160px; 
+            --cell-min-width: 100px;
+            --add-col-width: 50px;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            max-width: 1000px; 
+            margin: 0 auto; 
+            padding: 40px 20px; 
+            color: var(--text); 
+            font-size: 15px; 
+            box-sizing: border-box;
+        }
+
+        /* --- MOBILE RESPONSIVENESS --- */
+        @media (max-width: 600px) {
+            :root {
+                /* Shrink dimensions for small screens */
+                --first-col-width: 130px; 
+                --cell-min-width: 75px; 
+                --header-height: 50px;
+                --row-height: 60px;
+            }
+            body { 
+                padding: 20px 10px; /* Reduce outer padding */
+            }
+            h1 { font-size: 20px; }
+            h2 { font-size: 16px; margin-top: 30px; }
+            
+            .dish-name-input { font-size: 12px !important; }
+            .btn-tiny { width: 20px; height: 20px; }
+            
+            /* Make section notes more compact */
+            .section-note { margin-bottom: 10px; font-size: 12px; }
+        }
+
+        h1, h2 { 
+            border-bottom: 3px solid var(--accent); 
+            padding-bottom: 8px; 
+            text-transform: uppercase; 
+            letter-spacing: 0.5px; 
+            font-weight: 800;
+        }
+        h1 { margin-top: 0; font-size: 24px; }
+        h2 { font-size: 18px; margin-top: 50px; margin-bottom: 10px; }
+        
+        .section-note {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 20px;
+            font-style: italic;
+            background: #f4f4f4;
+            padding: 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        /* --- Matrix Layout --- */
+        .matrix-container {
+            position: relative;
+            border: 1px solid var(--border);
+            width: 100%;
+            background: var(--bg);
+            overflow: hidden; 
+        }
+
+        .scroll-viewport {
+            overflow-x: auto;
+            width: 100%;
+            position: relative;
+            /* Smooth scrolling on mobile */
+            -webkit-overflow-scrolling: touch; 
+        }
+
+        table { 
+            border-collapse: separate; 
+            border-spacing: 0; 
+            width: 100%; 
+        }
+        
+        th, td { 
+            border-right: 1px solid var(--border); 
+            border-bottom: 1px solid var(--border); 
+            padding: 5px; 
+            text-align: center; 
+            vertical-align: middle; 
+            background: #fff;
+            white-space: nowrap; 
+            height: var(--row-height);
+            box-sizing: border-box;
+        }
+        
+        /* Sticky Left Column */
+        .col-dish {
+            position: sticky;
+            left: 0;
+            z-index: 20; 
+            background: #fff;
+            border-right: 2px solid var(--border); 
+            width: var(--first-col-width);
+            min-width: var(--first-col-width);
+            max-width: var(--first-col-width);
+        }
+        
+        .col-person {
+            min-width: var(--cell-min-width);
+            width: auto; 
+        }
+
+        /* Sticky Right Column */
+        .col-add {
+            position: sticky;
+            right: 0;
+            z-index: 20;
+            background: #fff;
+            width: var(--add-col-width);
+            min-width: var(--add-col-width);
+            border-left: 1px dashed #ccc;
+            border-right: none;
+            padding: 0;
+        }
+        
+        td.col-add { pointer-events: none; background: #fff; }
+
+        th.col-add {
+            cursor: pointer; transition: 0.2s; color: var(--subtle); font-weight: bold; font-size: 18px; vertical-align: middle;
+        }
+        th.col-add:hover { background: var(--hover-bg); color: var(--accent); }
+
+        /* Corner Z-Index */
+        thead tr th:first-child { 
+            z-index: 30; background: #fff; border-top: none; border-left: none; border-bottom: 2px solid var(--border);
+        }
+        thead tr th:last-child { z-index: 30; border-bottom: 2px solid var(--border); }
+
+        /* --- Inputs --- */
+        input { 
+            text-align: center; font-family: inherit; font-size: inherit;
+            background: transparent; border: 1px solid transparent; 
+            border-bottom: 1px dotted transparent; transition: all 0.2s;
+            color: inherit; width: 100%; padding: 4px;
+        }
+        input:hover { border-bottom: 1px dotted #999; }
+        input:focus { outline: none; border-bottom: 2px solid var(--accent); }
+        /* Chrome, Safari, Edge, Opera */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+        }
+
+        /* Firefox */
+        input[type=number] {
+        -moz-appearance: textfield; /* Required for Firefox */
+        appearance: textfield;      /* Standard syntax (future-proof) */
+        }
+        
+        textarea.dish-name-input {
+            width: 100%;
+            height: 38px;
+            border: 1px solid transparent;
+            resize: none;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            background: transparent;
+            overflow: hidden;
+            line-height: 1.2;
+            text-align: left;
+        }
+        textarea.dish-name-input:hover { border: 1px dashed #ccc; }
+        textarea.dish-name-input:focus { outline: none; border: 1px solid #000; }
+
+        .btn-sm { cursor: pointer; border: none; background: transparent; color: #ccc; font-weight: bold; padding: 0 5px; }
+        .btn-sm:hover { color: red; }
+
+        .dish-row-header { display: flex; align-items: flex-start; gap: 4px; justify-content: space-between; width: 100%; padding: 0 2px; }
+        .dish-inputs { display: flex; flex-direction: column; width: 100%; overflow: hidden; }
+        .dish-price-wrap { display: flex; align-items: center; font-size: 12px; color: var(--subtle); margin-top: 2px; }
+        .dish-price { width: 50px; text-align: left; color: var(--subtle); font-size: 12px; }
+
+        .cell-ctrl { display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .btn-tiny { 
+            width: 22px; height: 22px; border-radius: 4px; border: 1px solid #eee; 
+            background: #f9f9f9; color: #555; cursor: pointer; display: flex; 
+            align-items: center; justify-content: center; padding: 0; user-select: none;
+        }
+        .btn-tiny:hover { border-color: #999; color: #000; background: #fff; }
+        .ratio-val { font-weight: bold; min-width: 15px; display: inline-block; font-size: 14px; }
+
+        .ext-btn-dish {
+            width: var(--first-col-width);
+            height: var(--row-height);
+            display: flex; align-items: center; padding-left: 10px; box-sizing: border-box;
+            background: #fff; border-right: 2px solid var(--border); border-top: 1px solid var(--border);
+            cursor: pointer; font-weight: bold; color: var(--subtle); font-size: 13px;
+            position: sticky; left: 0; z-index: 20;
+        }
+        .ext-btn-dish:hover { background: var(--hover-bg); color: var(--accent); }
+
+        .btn-calc {
+            width: 100%; padding: 18px; font-weight: 800; font-size: 16px; letter-spacing: 1px;
+            background: var(--accent); color: #fff; border: none; cursor: pointer; text-transform: uppercase;
+        }
+        .btn-calc:hover { opacity: 0.9; }
+
+        .warning { color: #d00; font-weight: bold; margin-top: 10px; padding: 15px; background: #fff0f0; border-left: 4px solid #d00; display: none; }
+        
+        /* UPDATED: Bigger JSON Area */
+        textarea.json-area { 
+            width: 100%; 
+            height: 200px; /* Increased Height */
+            border: 1px solid var(--border); 
+            font-family: monospace; 
+            padding: 10px; 
+            background: #fafafa; 
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        
+        .simple-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        .simple-table th, .simple-table td { border: 1px solid var(--border); padding: 10px; text-align: left; }
+        .add-row-btn { 
+            width: 100%; padding: 10px; border: 1px dashed #ccc; background: #fff; 
+            cursor: pointer; color: var(--subtle); font-weight: bold; text-align: left; box-sizing: border-box;
+        }
+        .add-row-btn:hover { background: var(--hover-bg); color: var(--accent); }
+        .btn-action {
+            background: #eee; border: 1px solid #ccc; padding: 4px 8px; 
+            cursor: pointer; font-size: 11px; margin-left: 2px; border-radius: 3px;
+        }
+        .btn-action:hover { background: #ddd; color: #000; }
+
+        .person-tag {
+            display: inline-block; padding: 2px 6px; border-radius: 4px; 
+            color: #fff; font-weight: bold; font-size: 12px; margin-right: 5px;
+            text-shadow: 0px 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .payment-note-input {
+            border: 1px solid #ccc; background: #fff; padding: 5px; 
+            width: 200px; font-size: 12px; margin-left: 10px; border-radius: 4px;
+        }
+
+        .session-bar {
+            display: flex; 
+            gap: 8px; 
+            align-items: center; 
+            padding: 10px 0; 
+            flex-wrap: wrap;
+        }
+        .session-bar button {
+            background: #000; color: #fff; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-weight: 700;
+        }
+        .session-bar button:hover { opacity: 0.9; }
+        .session-info { font-size: 13px; color: #333; }
+    </style>
+</head>
+<body>
+
+    <h1>Bill Splitter</h1>
+    <!-- Home screen -->
+    <div id="homeRoot">
+        <p class="section-note">
+            Create a new shared bill link, then send that link to your friends.  
+            Anyone with the link can edit the bill.
+        </p>
+        <div style="margin: 20px 0;">
+            <button class="btn-calc" style="max-width: 260px;" onclick="startNewBill()">
+                Create New Bill Link
+            </button>
+        </div>
+    </div>
+
+    <!-- Main app UI, hidden until a session is active -->
+    <div id="appRoot" style="display: none;">
+        <div class="session-bar">
+            <button onclick="newSession()">New shared link</button>
+            <button onclick="saveSession()">Save</button>
+            <button onclick="refreshSession()">Refresh</button>
+            <span id="sessionInfo" class="session-info">Not shared yet</span>
+        </div>
+
+    <div class="section" id="s1">
+        <h2>1. Consumption</h2>
+        
+        <p class="section-note">
+            Input dishes and prices on the left. Add people on the right. 
+            Adjust how much each person ate using the + / - buttons.<br>
+            <br>TODO:<br>
+            - Fix button placement -> spamable buttons (in other sections as well)<br>
+            - Better increment/decrement buttons<br>
+            - Colour tagging for people<br>
+            - Gradient for portions eaten<br>
+        </p>
+
+        <div class="matrix-container">
+            <div class="scroll-viewport">
+                <table id="matrixTable">
+                    <thead>
+                        <tr id="headerRow"></tr>
+                    </thead>
+                    <tbody id="matrixBody"></tbody>
+                </table>
+            </div>
+            <div class="ext-btn-dish" onclick="addDish()" title="Add Dish">+ Dish</div>
+        </div>
+    </div>
+
+    <div class="section" id="s2">
+        <h2>2. Who Paid?</h2>
+        
+        <p class="section-note">
+            Log who actually paid the restaurant bill (and how much).
+        </p>
+
+        <table class="simple-table" id="paymentTable">
+            <thead>
+                <tr>
+                    <th style="width: 40%;">Person</th>
+                    <th style="width: 40%;">Amount Paid</th>
+                    <th style="width: 10%;"></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div class="add-row-btn" onclick="addPaymentRow()">+ Add Payer</div>
+        <div id="paymentWarning" class="warning"></div>
+    </div>
+
+    <div class="section" id="s3">
+        <h2>3. Who is Covering? ("Bao")</h2>
+        
+        <p class="section-note">
+            If someone is treating others (Bao Bữa), add them here.
+        </p>
+
+        <table class="simple-table" id="coverTable">
+            <thead>
+                <tr>
+                    <th style="width: 40%;">Person</th>
+                    <th style="width: 40%;">Amount Covered</th>
+                    <th style="width: 10%;"></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div class="add-row-btn" onclick="addCoverRow()">+ Add Cover</div>
+    </div>
+
+    <div class="section" id="s4">
+        <h2>4. Settlement</h2>
+        
+        <p class="section-note">
+            Click below to generate the final list of who owes whom.
+            <br>TODO:<br>
+            - Could make it dynamic
+        </p>
+
+        <button class="btn-calc" onclick="calculate()">Calculate Settlements</button>
+        <ul id="resultList" style="margin-top: 25px; list-style: none; padding: 0;"></ul>
+    </div>
+
+    <div class="section" id="s5">
+        <h2>5. Data</h2>
+        
+        <p class="section-note">
+            Save or Load your current session data.
+        </p>
+
+        <textarea id="jsonArea" class="json-area"></textarea>
+        <div>
+            <button onclick="saveData()">Get JSON</button>
+            <button onclick="loadData()">Load JSON</button>
+        </div>
+    </div>
+
+    <script>
+        let state = {
+            people: [{id: 'p1', name: 'Alice'}, {id: 'p2', name: 'Bob'}, {id: 'p3', name: 'Charlie'}],
+            dishes: [{id: 'd1', name: 'Pizza (Large)', price: 100}, {id: 'd2', name: 'Drinks', price: 20}],
+            ratios: {'p1': {'d1': 1}, 'p2': {'d1': 1}, 'p3': {'d2': 1}},
+            paymentDetails: {}, // Map: person_id -> "Bank Info / Note"
+            colors: {},          // Map: person_id -> hex color
+            payments: [],
+            covers: []
+        };
+        let sessionId = null;
+        const TAG_COLORS = ['#d32f2f', '#1976d2', '#388e3c', '#fbc02d', '#7b1fa2', '#f57c00', '#0097a7', '#5d4037'];
+
+        function showHome() {
+            const home = document.getElementById('homeRoot');
+            const app = document.getElementById('appRoot');
+            if (home) home.style.display = 'block';
+            if (app) app.style.display = 'none';
+        }
+
+        function showApp() {
+            const home = document.getElementById('homeRoot');
+            const app = document.getElementById('appRoot');
+            if (home) home.style.display = 'none';
+            if (app) app.style.display = 'block';
+        }
+
+        function getShareUrl(id) {
+            return `${window.location.origin}${window.location.pathname}?id=${id}`;
+        }
+
+        function updateSessionInfo() {
+            const el = document.getElementById('sessionInfo');
+            if (!el) return;
+            if (!sessionId) {
+                el.innerText = 'Not shared yet';
+                return;
+            }
+            const url = getShareUrl(sessionId);
+            el.innerHTML = `Link: <a href="${url}" target="_blank" rel="noreferrer">${url}</a>`;
+        }
+
+        async function startNewBill() {
+            await newSession();
+            showApp();
+            render();
+        }
+
+        async function newSession() {
+            const res = await fetch('/sessions', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state})
+            });
+            if (!res.ok) {
+                alert('Failed to create session');
+                return;
+            }
+            const data = await res.json();
+            sessionId = data.id;
+            window.history.replaceState({}, '', `?id=${sessionId}`);
+            updateSessionInfo();
+            alert('Shared link created. Others can edit using the link.');
+            showApp();
+        }
+
+        async function saveSession() {
+            if (!sessionId) {
+                await newSession();
+                return;
+            }
+            const res = await fetch(`/sessions/${sessionId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state})
+            });
+            if (!res.ok) {
+                alert('Failed to save session');
+                return;
+            }
+            updateSessionInfo();
+        }
+
+        // Auto-save with debouncing (saves 1 second after last change)
+        let autoSaveTimeout = null;
+        function autoSave() {
+            if (!sessionId) return; // Don't auto-save if no session exists
+            
+            // Clear existing timeout
+            if (autoSaveTimeout) {
+                clearTimeout(autoSaveTimeout);
+            }
+            
+            // Set new timeout to save after 1 second of inactivity
+            autoSaveTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/sessions/${sessionId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({state})
+                    });
+                    if (res.ok) {
+                        // Silently save - no alert on success
+                        console.log('Auto-saved');
+                    } else {
+                        console.error('Auto-save failed');
+                    }
+                } catch (e) {
+                    console.error('Auto-save error:', e);
+                }
+            }, 1000); // Wait 1 second after last change
+        }
+
+        async function loadSessionById(id) {
+            const res = await fetch(`/sessions/${id}`);
+            if (!res.ok) {
+                throw new Error('Session not found');
+            }
+            const data = await res.json();
+            state = data.state;
+            sessionId = id;
+            window.history.replaceState({}, '', `?id=${sessionId}`);
+            updateSessionInfo();
+            showApp();
+            render();
+        }
+
+        async function refreshSession() {
+            if (!sessionId) return;
+            try {
+                await loadSessionById(sessionId);
+            } catch (e) {
+                alert('Failed to refresh session: ' + e.message);
+            }
+        }
+
+        async function initSessionFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const id = params.get('id');
+            updateSessionInfo();
+            if (id) {
+                try {
+                    await loadSessionById(id);
+                    return;
+                } catch (e) {
+                    console.error(e);
+                    alert('Could not load shared session. Starting a fresh one.');
+                }
+            }
+            showHome();
+        }
+        function getPersonColor(pid) {
+            if (!state.colors[pid]) {
+                // Assign a random deterministic color if not set
+                const idx = Object.keys(state.colors).length % TAG_COLORS.length;
+                state.colors[pid] = TAG_COLORS[idx];
+            }
+            return state.colors[pid];
+        }
+
+        function render() {
+            renderMatrix();
+            renderPayments();
+            renderCovers();
+        }
+
+        function handleEnter(e) { if (e.key === 'Enter') e.target.blur(); }
+
+        function renderMatrix() {
+            const thead = document.getElementById('headerRow');
+            const tbody = document.getElementById('matrixBody');
+            
+            thead.innerHTML = '<th class="col-dish"></th>'; 
+            
+            state.people.forEach(p => {
+                let th = document.createElement('th');
+                th.className = 'col-person';
+                th.innerHTML = `
+                    <div style="display:flex; flex-direction:column; align-items:center;">
+                        <input type="text" value="${p.name}" 
+                               onchange="updatePersonName('${p.id}', this.value)" 
+                               onkeydown="handleEnter(event)" 
+                               style="font-weight:bold;">
+                        <button class="btn-sm" onclick="delPerson('${p.id}')">x</button>
+                    </div>
+                `;
+                thead.appendChild(th);
+            });
+
+            let thAdd = document.createElement('th');
+            thAdd.className = 'col-add';
+            thAdd.title = "Add Person";
+            thAdd.innerText = "+";
+            thAdd.onclick = addPerson;
+            thead.appendChild(thAdd);
+
+            tbody.innerHTML = '';
+            state.dishes.forEach(d => {
+                let tr = document.createElement('tr');
+                
+                let tdInfo = document.createElement('td');
+                tdInfo.className = 'col-dish';
+                tdInfo.innerHTML = `
+                    <div class="dish-row-header">
+                        <div class="dish-inputs">
+                            <textarea class="dish-name-input" 
+                                      onchange="updateDishName('${d.id}', this.value); autoSave();" 
+                                      onkeydown="handleEnter(event)" 
+                                      placeholder="Item...">${d.name}</textarea>
+                            
+                            <div class="dish-price-wrap">
+                                $ <input class="dish-price" type="number" value="${d.price}" 
+                                         onchange="updateDishPrice('${d.id}', this.value); autoSave();" 
+                                         onkeydown="handleEnter(event)" placeholder="0">
+                            </div>
+                        </div>
+                        <button class="btn-sm" onclick="delDish('${d.id}')">x</button>
+                    </div>
+                `;
+                tr.appendChild(tdInfo);
+
+                state.people.forEach(p => {
+                    let td = document.createElement('td');
+                    td.className = 'col-person';
+                    let val = (state.ratios[p.id] && state.ratios[p.id][d.id]) || 0;
+                    td.innerHTML = `
+                        <div class="cell-ctrl">
+                            <button class="btn-tiny" onclick="modRatio('${p.id}', '${d.id}', -1)">-</button>
+                            <span class="ratio-val" style="${val > 0 ? 'color:black' : 'color:#ccc'}">${val}</span>
+                            <button class="btn-tiny" onclick="modRatio('${p.id}', '${d.id}', 1)">+</button>
+                        </div>
+                    `;
+                    tr.appendChild(td);
+                });
+
+                let tdEmpty = document.createElement('td');
+                tdEmpty.className = 'col-add'; 
+                tr.appendChild(tdEmpty);
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderPayments() {
+            const tbody = document.querySelector('#paymentTable tbody');
+            tbody.innerHTML = '';
+            
+            // Calculate totals for button logic
+            const totalBill = state.dishes.reduce((sum, d) => sum + d.price, 0);
+            const totalPaidCurrently = state.payments.reduce((sum, p) => sum + p.amount, 0);
+
+            state.payments.forEach((pay, idx) => {
+                let tr = document.createElement('tr');
+                const pColor = getPersonColor(pay.person_id);
+                
+                tr.innerHTML = `
+                    <td>
+                        <div style="display:flex; align-items:center;">
+                            <div class="person-tag" style="background:${pColor}; width:10px; height:20px;">&nbsp;</div>
+                            <select onchange="state.payments[${idx}].person_id = this.value; render(); autoSave();" 
+                                    style="width:90%; border:none; background:transparent;">
+                                ${state.people.map(p => `<option value="${p.id}" ${p.id === pay.person_id ? 'selected':''}>${p.name}</option>`).join('')}
+                            </select>
+                        </div>
+                    </td>
+                    <td>
+                        <div style="display:flex; align-items:center;">
+                            <input type="number" value="${pay.amount}" 
+                                onchange="state.payments[${idx}].amount = parseFloat(this.value); render(); autoSave();" 
+                                onkeydown="handleEnter(event)">
+                            
+                            <button class="btn-action" title="Set to Total Bill"
+                                onclick="updatePaymentAmount(${idx}, ${totalBill})">All</button>
+                            
+                            <button class="btn-action" title="Add Remaining Unpaid Amount"
+                                onclick="updatePaymentAmount(${idx}, ${totalBill} - ${totalPaidCurrently} + ${pay.amount})">Max</button>
+                        </div>
+                    </td>
+                    <td><button class="btn-sm" onclick="state.payments.splice(${idx},1); renderPayments(); autoSave();">x</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Helper for the buttons
+        function updatePaymentAmount(index, amount) {
+            // Prevent negative amounts
+            state.payments[index].amount = Math.max(0, parseFloat(amount.toFixed(2)));
+            renderPayments();
+            autoSave();
+        }
+
+        function renderCovers() {
+            const tbody = document.querySelector('#coverTable tbody');
+            tbody.innerHTML = '';
+            state.covers.forEach((cov, idx) => {
+                let tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><select onchange="state.covers[${idx}].person_id = this.value; autoSave();" style="width:100%; border:none; background:transparent;">
+                        ${state.people.map(p => `<option value="${p.id}" ${p.id === cov.person_id ? 'selected':''}>${p.name}</option>`).join('')}
+                    </select></td>
+                    <td><input type="number" value="${cov.amount}" onchange="state.covers[${idx}].amount = parseFloat(this.value); autoSave();" onkeydown="handleEnter(event)"></td>
+                    <td><button class="btn-sm" onclick="state.covers.splice(${idx},1); renderCovers(); autoSave();">x</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function addDish() { state.dishes.push({id: 'd'+Date.now(), name: 'New Item', price: 0}); render(); autoSave(); }
+        function delDish(id) { state.dishes = state.dishes.filter(d => d.id !== id); render(); autoSave(); }
+        function addPerson() { state.people.push({id: 'p'+Date.now(), name: 'Name'}); render(); autoSave(); }
+        function delPerson(id) { state.people = state.people.filter(p => p.id !== id); render(); autoSave(); }
+        function updateDishName(id, val) { state.dishes.find(d => d.id === id).name = val; autoSave(); }
+        function updateDishPrice(id, val) { state.dishes.find(d => d.id === id).price = parseFloat(val) || 0; autoSave(); }
+        function updatePersonName(id, val) { state.people.find(p => p.id === id).name = val; render(); autoSave(); }
+        function modRatio(pid, did, delta) {
+            if (!state.ratios[pid]) state.ratios[pid] = {};
+            const current = state.ratios[pid][did] || 0;
+            const newVal = current + delta;
+            if (newVal < 0) return;
+            state.ratios[pid][did] = newVal;
+            render();
+            autoSave();
+        }
+        function addPaymentRow() { if(state.people.length) state.payments.push({person_id: state.people[0].id, amount: 0}); renderPayments(); autoSave(); }
+        function addCoverRow() { if(state.people.length) state.covers.push({person_id: state.people[0].id, amount: 0}); renderCovers(); autoSave(); }
+        function saveData() { document.getElementById('jsonArea').value = JSON.stringify(state, null, 2); }
+        function loadData() { try { state = JSON.parse(document.getElementById('jsonArea').value); render(); } catch(e) { alert('Invalid JSON data'); } }
+
+        async function calculate() {
+            const totalDish = state.dishes.reduce((sum, d) => sum + d.price, 0);
+            const totalPaid = state.payments.reduce((sum, p) => sum + p.amount, 0);
+            const w = document.getElementById('paymentWarning');
+            if (Math.abs(totalDish - totalPaid) > 0.1) {
+                w.style.display = 'block'; 
+                w.innerText = `⚠️ Total Bill: ${totalDish.toFixed(2)} | Total Paid: ${totalPaid.toFixed(2)} | Difference: ${(totalDish - totalPaid).toFixed(2)}`;
+            } else { w.style.display = 'none'; }
+
+            const res = await fetch('/calculate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({section1: {people: state.people, dishes: state.dishes, ratios: state.ratios}, payments: state.payments, covers: state.covers})
+            });
+    
+            const data = await res.json();
+            const list = document.getElementById('resultList');
+            list.innerHTML = '';
+
+            if(data.settlements.length === 0) {
+                list.innerHTML = '<li>No debts found. Everyone is settled!</li>';
+                return;
+            }
+
+            data.settlements.forEach(item => {
+                // item = { debtor_id, debtor_name, creditor_id, creditor_name, amount }
+                
+                const dColor = getPersonColor(item.debtor_id);
+                const cColor = getPersonColor(item.creditor_id);
+                
+                // Get existing note for this creditor
+                const currentNote = state.paymentDetails[item.creditor_id] || '';
+
+                const li = document.createElement('li');
+                li.style.marginBottom = "15px";
+                li.style.padding = "10px";
+                li.style.border = "1px solid #eee";
+                li.style.background = "#fff";
+                
+                li.innerHTML = `
+                    <div style="font-size:16px; margin-bottom:5px; display:flex; align-items:center; flex-wrap:wrap;">
+                        <span class="person-tag" style="background:${dColor}">${item.debtor_name}</span>
+                        <span style="margin:0 8px; color:#888;">pays</span>
+                        <span class="person-tag" style="background:${cColor}">${item.creditor_name}</span>
+                        <span style="font-weight:bold; margin-left:auto;">$${item.amount.toFixed(2)}</span>
+                    </div>
+                    
+                    <div style="display:flex; align-items:center; margin-top:5px; background:#f9f9f9; padding:5px;">
+                        <span style="font-size:11px; color:#666; font-weight:bold;">PAY TO ${item.creditor_name.toUpperCase()}:</span>
+                        <input type="text" 
+                            class="payment-note-input"
+                            placeholder="Bank info / QR Link..." 
+                            value="${currentNote}"
+                            data-creditor="${item.creditor_id}"
+                            oninput="syncPaymentDetails('${item.creditor_id}', this.value)"
+                        >
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+        }
+        function syncPaymentDetails(creditorId, value) {
+            // 1. Update State
+            state.paymentDetails[creditorId] = value;
+            
+            // 2. Find all other inputs for this creditor and update them live
+            const inputs = document.querySelectorAll(`input[data-creditor="${creditorId}"]`);
+            inputs.forEach(input => {
+                if (input.value !== value) {
+                    input.value = value;
+                }
+            });
+            
+            // 3. Auto-save
+            autoSave();
+        }
+        initSessionFromUrl();
+    </script>
+</body>
+</html>
