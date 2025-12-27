@@ -176,31 +176,55 @@ async def create_session(payload: SessionPayload):
     try:
         pool = await get_pool()
         session_id = uuid.uuid4().hex
+        
+        # Check if using session pooler - they may not support explicit transactions
+        is_pooler = "pooler" in DATABASE_URL.lower() or ":6543" in DATABASE_URL
+        
         async with pool.acquire() as conn:
             # Ensure table exists (important for Vercel where startup events don't run)
             await ensure_table_exists(conn)
-            # Use explicit transaction for session pooler compatibility
-            async with conn.transaction():
+            
+            # Session poolers in transaction mode may not support explicit transactions
+            # Try without explicit transaction first for poolers
+            if is_pooler:
+                # For session poolers, execute directly without explicit transaction
                 await conn.execute(
                     "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
                     session_id,
                     json.dumps(payload.state),
                 )
+            else:
+                # For regular connections, use explicit transaction
+                async with conn.transaction():
+                    await conn.execute(
+                        "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
+                        session_id,
+                        json.dumps(payload.state),
+                    )
         return {"id": session_id}
     except Exception as e:
-        print(f"Error creating session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
+        error_msg = str(e)
+        print(f"Error creating session: {error_msg}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to create session: {error_msg}")
 
 @app.get("/sessions/{session_id}")
 async def get_session(session_id: str):
     try:
         pool = await get_pool()
+        is_pooler = "pooler" in DATABASE_URL.lower() or ":6543" in DATABASE_URL
+        
         async with pool.acquire() as conn:
             # Ensure table exists
             await ensure_table_exists(conn)
-            # Use explicit transaction for session pooler compatibility
-            async with conn.transaction():
+            # Session poolers may not support explicit transactions
+            if is_pooler:
                 row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
+            else:
+                async with conn.transaction():
+                    row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
         if not row:
             raise HTTPException(status_code=404, detail="Session not found")
         # state is stored as JSONB; ensure we return a dict
@@ -221,16 +245,25 @@ async def get_session(session_id: str):
 async def update_session(session_id: str, payload: SessionPayload):
     try:
         pool = await get_pool()
+        is_pooler = "pooler" in DATABASE_URL.lower() or ":6543" in DATABASE_URL
+        
         async with pool.acquire() as conn:
             # Ensure table exists
             await ensure_table_exists(conn)
-            # Use explicit transaction for session pooler compatibility
-            async with conn.transaction():
+            # Session poolers may not support explicit transactions
+            if is_pooler:
                 result = await conn.execute(
                     "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
                     json.dumps(payload.state),
                     session_id,
                 )
+            else:
+                async with conn.transaction():
+                    result = await conn.execute(
+                        "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
+                        json.dumps(payload.state),
+                        session_id,
+                    )
         if result.endswith("UPDATE 0"):
             raise HTTPException(status_code=404, detail="Session not found")
         return {"id": session_id}
