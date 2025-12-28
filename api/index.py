@@ -186,6 +186,29 @@ async def create_session(payload: SessionPayload):
                     session_id,
                     json.dumps(payload.state),
                 )
+<<<<<<< Updated upstream
+=======
+                print(f"Session created successfully: {result}")
+            except Exception as insert_error:
+                error_msg = str(insert_error)
+                print(f"INSERT failed: {error_msg}")
+                print(f"Error type: {type(insert_error).__name__}")
+                # Check if it's a table doesn't exist error
+                if "does not exist" in error_msg.lower() or "relation" in error_msg.lower():
+                    print("Table might not exist, trying to create it again...")
+                    _table_created = False  # Reset flag to retry table creation
+                    await ensure_table_exists(conn)
+                    # Retry the insert
+                    result = await conn.execute(
+                "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
+                session_id,
+                        state_json,
+            )
+                    print(f"Session created after table creation: {result}")
+                else:
+                    raise
+        
+>>>>>>> Stashed changes
         return {"id": session_id}
     except Exception as e:
         print(f"Error creating session: {str(e)}")
@@ -201,6 +224,12 @@ async def get_session(session_id: str):
             # Use explicit transaction for session pooler compatibility
             async with conn.transaction():
                 row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
+<<<<<<< Updated upstream
+=======
+            else:
+                async with conn.transaction():
+            row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
+>>>>>>> Stashed changes
         if not row:
             raise HTTPException(status_code=404, detail="Session not found")
         # state is stored as JSONB; ensure we return a dict
@@ -231,6 +260,16 @@ async def update_session(session_id: str, payload: SessionPayload):
                     json.dumps(payload.state),
                     session_id,
                 )
+<<<<<<< Updated upstream
+=======
+            else:
+                async with conn.transaction():
+            result = await conn.execute(
+                "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
+                json.dumps(payload.state),
+                session_id,
+            )
+>>>>>>> Stashed changes
         if result.endswith("UPDATE 0"):
             raise HTTPException(status_code=404, detail="Session not found")
         return {"id": session_id}
