@@ -95,6 +95,53 @@ class TestCalculateConsumption(unittest.TestCase):
         self.assertEqual(total, 0.0)
         self.assertEqual(consumption["p1"], 0.0)
         self.assertEqual(consumption["p2"], 0.0)
+    
+    def test_empty_people(self):
+        """Edge case: no people."""
+        people_ids = []
+        dishes = [{"id": "d1", "price": 100.0}]
+        ratios = {}
+        
+        consumption, total = calculate_consumption(people_ids, dishes, ratios)
+        
+        self.assertEqual(total, 0.0)
+        self.assertEqual(consumption, {})
+    
+    def test_negative_price(self):
+        """Edge case: negative price should be ignored."""
+        people_ids = ["p1", "p2"]
+        dishes = [
+            {"id": "d1", "price": 100.0},
+            {"id": "d2", "price": -50.0}  # Invalid
+        ]
+        ratios = {
+            "p1": {"d1": 1, "d2": 1},
+            "p2": {"d1": 1, "d2": 1}
+        }
+        
+        consumption, total = calculate_consumption(people_ids, dishes, ratios)
+        
+        self.assertEqual(total, 100.0)  # Only d1 counted
+        self.assertEqual(consumption["p1"], 50.0)
+        self.assertEqual(consumption["p2"], 50.0)
+    
+    def test_dish_no_eaters(self):
+        """Edge case: dish with no one eating it."""
+        people_ids = ["p1", "p2"]
+        dishes = [
+            {"id": "d1", "price": 80.0},
+            {"id": "d2", "price": 20.0}  # No one eats this
+        ]
+        ratios = {
+            "p1": {"d1": 1},
+            "p2": {"d1": 1}
+        }
+        
+        consumption, total = calculate_consumption(people_ids, dishes, ratios)
+        
+        self.assertEqual(total, 100.0)  # Both dishes counted in total
+        self.assertEqual(consumption["p1"], 40.0)  # Only d1 distributed
+        self.assertEqual(consumption["p2"], 40.0)
 
 
 class TestCalculateFinalCosts(unittest.TestCase):
@@ -112,21 +159,42 @@ class TestCalculateFinalCosts(unittest.TestCase):
         self.assertEqual(final_costs["p1"], 60.0)
         self.assertEqual(final_costs["p2"], 40.0)
     
-    def test_partial_cover(self):
-        """Test when someone covers part of the bill."""
-        people_ids = ["p1", "p2"]
-        raw_consumption = {"p1": 60.0, "p2": 40.0}
-        total_bill = 100.0
-        covers = [{"person_id": "p1", "amount": 20.0}]
+    def test_equal_cover_split(self):
+        """Test cover split equally among all people."""
+        people_ids = ["p1", "p2", "p3"]
+        raw_consumption = {"p1": 30.0, "p2": 30.0, "p3": 30.0}
+        total_bill = 90.0
+        covers = [{"person_id": "p1", "amount": 30.0}]
         
         final_costs = calculate_final_costs(people_ids, raw_consumption, total_bill, covers)
         
-        # Remaining to split: 80
-        # p1 pays: (60/100 * 80) + 20 = 48 + 20 = 68
-        # p2 pays: (40/100 * 80) + 0 = 32
-        self.assertEqual(final_costs["p1"], 68.0)
-        self.assertEqual(final_costs["p2"], 32.0)
-        self.assertEqual(sum(final_costs.values()), 100.0)
+        # Cover of 30 split equally: 10 each
+        # p1: 30 - 10 + 30(cover) = 50
+        # p2: 30 - 10 = 20
+        # p3: 30 - 10 = 20
+        self.assertEqual(final_costs["p1"], 50.0)
+        self.assertEqual(final_costs["p2"], 20.0)
+        self.assertEqual(final_costs["p3"], 20.0)
+        self.assertAlmostEqual(sum(final_costs.values()), 90.0, places=2)
+    
+    def test_cover_exceeds_person_cost(self):
+        """Test when cover share exceeds a person's consumption (priority queue logic)."""
+        people_ids = ["p1", "p2", "p3"]
+        raw_consumption = {"p1": 10.0, "p2": 40.0, "p3": 50.0}
+        total_bill = 100.0
+        covers = [{"person_id": "p3", "amount": 60.0}]
+        
+        final_costs = calculate_final_costs(people_ids, raw_consumption, total_bill, covers)
+        
+        # Cover of 60 should be split, starting with lowest consumption
+        # Initial equal split: 20 each
+        # p1 only consumed 10, so excess 10 redistributed
+        # Expected: p1 pays 0 (10-10) + 0, p2 and p3 share remaining
+        self.assertEqual(final_costs["p1"], 0.0)
+        # Remaining people handle the rest
+        self.assertGreater(final_costs["p2"], 0)
+        self.assertGreater(final_costs["p3"], 0)
+        self.assertAlmostEqual(sum(final_costs.values()), 100.0, places=2)
     
     def test_full_cover(self):
         """Test when someone covers the entire bill."""
@@ -137,9 +205,7 @@ class TestCalculateFinalCosts(unittest.TestCase):
         
         final_costs = calculate_final_costs(people_ids, raw_consumption, total_bill, covers)
         
-        # Remaining to split: 0
-        # p1 pays: 100 (cover only)
-        # p2 pays: 0
+        # Bill fully covered, only coverer pays
         self.assertEqual(final_costs["p1"], 100.0)
         self.assertEqual(final_costs["p2"], 0.0)
     
@@ -149,20 +215,56 @@ class TestCalculateFinalCosts(unittest.TestCase):
         raw_consumption = {"p1": 30.0, "p2": 30.0, "p3": 40.0}
         total_bill = 100.0
         covers = [
-            {"person_id": "p1", "amount": 10.0},
-            {"person_id": "p2", "amount": 20.0}
+            {"person_id": "p1", "amount": 20.0},
+            {"person_id": "p2", "amount": 10.0}
         ]
         
         final_costs = calculate_final_costs(people_ids, raw_consumption, total_bill, covers)
         
-        # Remaining to split: 70
-        # p1 pays: (30/100 * 70) + 10 = 21 + 10 = 31
-        # p2 pays: (30/100 * 70) + 20 = 21 + 20 = 41
-        # p3 pays: (40/100 * 70) + 0 = 28
-        self.assertEqual(final_costs["p1"], 31.0)
-        self.assertEqual(final_costs["p2"], 41.0)
-        self.assertEqual(final_costs["p3"], 28.0)
-        self.assertEqual(sum(final_costs.values()), 100.0)
+        # Total cover: 30, split equally: 10 each
+        # p1: 30 - 10 + 20 = 40
+        # p2: 30 - 10 + 10 = 30
+        # p3: 40 - 10 = 30
+        self.assertEqual(final_costs["p1"], 40.0)
+        self.assertEqual(final_costs["p2"], 30.0)
+        self.assertEqual(final_costs["p3"], 30.0)
+        self.assertAlmostEqual(sum(final_costs.values()), 100.0, places=2)
+    
+    def test_cover_exceeds_bill(self):
+        """Edge case: cover exceeds total bill."""
+        people_ids = ["p1", "p2"]
+        raw_consumption = {"p1": 50.0, "p2": 50.0}
+        total_bill = 100.0
+        covers = [{"person_id": "p1", "amount": 150.0}]
+        
+        final_costs = calculate_final_costs(people_ids, raw_consumption, total_bill, covers)
+        
+        # Cover exceeds bill, only coverer pays
+        self.assertEqual(final_costs["p1"], 150.0)
+        self.assertEqual(final_costs["p2"], 0.0)
+    
+    def test_empty_people(self):
+        """Edge case: no people."""
+        people_ids = []
+        raw_consumption = {}
+        total_bill = 100.0
+        covers = []
+        
+        final_costs = calculate_final_costs(people_ids, raw_consumption, total_bill, covers)
+        
+        self.assertEqual(final_costs, {})
+    
+    def test_zero_bill(self):
+        """Edge case: zero bill."""
+        people_ids = ["p1", "p2"]
+        raw_consumption = {"p1": 0.0, "p2": 0.0}
+        total_bill = 0.0
+        covers = []
+        
+        final_costs = calculate_final_costs(people_ids, raw_consumption, total_bill, covers)
+        
+        self.assertEqual(final_costs["p1"], 0.0)
+        self.assertEqual(final_costs["p2"], 0.0)
 
 
 class TestCalculateBalances(unittest.TestCase):
@@ -233,6 +335,31 @@ class TestCalculateBalances(unittest.TestCase):
         self.assertEqual(p1_balance["amount"], 20.0)   # Paid 50, cost 30
         self.assertEqual(p2_balance["amount"], 10.0)   # Paid 50, cost 40
         self.assertEqual(p3_balance["amount"], -30.0)  # Paid 0, cost 30
+    
+    def test_empty_people(self):
+        """Edge case: no people."""
+        people_ids = []
+        final_costs = {}
+        payments = []
+        
+        balances = calculate_balances(people_ids, final_costs, payments)
+        
+        self.assertEqual(len(balances), 0)
+    
+    def test_negative_payment(self):
+        """Edge case: negative payment treated as 0."""
+        people_ids = ["p1", "p2"]
+        final_costs = {"p1": 50.0, "p2": 50.0}
+        payments = [
+            {"person_id": "p1", "amount": 50.0},
+            {"person_id": "p2", "amount": -10.0}  # Invalid
+        ]
+        
+        balances = calculate_balances(people_ids, final_costs, payments)
+        
+        # p2 treated as paying 0
+        p2_balance = next(b for b in balances if b["id"] == "p2")
+        self.assertEqual(p2_balance["amount"], -50.0)
 
 
 class TestCalculateSettlements(unittest.TestCase):
@@ -337,6 +464,41 @@ class TestCalculateSettlements(unittest.TestCase):
         
         self.assertEqual(len(settlements), 1)
         self.assertEqual(settlements[0]["amount"], 33.33)
+    
+    def test_single_person(self):
+        """Edge case: single person with balance."""
+        balances = [{"id": "p1", "amount": 50.0}]
+        people_names = {"p1": "Alice"}
+        
+        settlements = calculate_settlements(balances, people_names)
+        
+        self.assertEqual(len(settlements), 0)
+    
+    def test_all_positive_balances(self):
+        """Edge case: all positive balances (everyone is owed money)."""
+        balances = [
+            {"id": "p1", "amount": 30.0},
+            {"id": "p2", "amount": 20.0}
+        ]
+        people_names = {"p1": "Alice", "p2": "Bob"}
+        
+        settlements = calculate_settlements(balances, people_names)
+        
+        # No settlements possible if no one owes money
+        self.assertEqual(len(settlements), 0)
+    
+    def test_all_negative_balances(self):
+        """Edge case: all negative balances (everyone owes money)."""
+        balances = [
+            {"id": "p1", "amount": -30.0},
+            {"id": "p2", "amount": -20.0}
+        ]
+        people_names = {"p1": "Alice", "p2": "Bob"}
+        
+        settlements = calculate_settlements(balances, people_names)
+        
+        # No settlements possible if no one is owed money
+        self.assertEqual(len(settlements), 0)
 
 
 class TestIntegration(unittest.TestCase):
