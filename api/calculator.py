@@ -3,6 +3,7 @@ Bill splitting calculation module.
 Handles consumption calculation, cover payments, and settlement optimization.
 """
 
+import heapq
 from typing import List, Dict, Tuple
 
 
@@ -14,6 +15,13 @@ def calculate_consumption(
     """
     Calculate raw consumption for each person based on dish ratios.
     
+    Edge cases handled:
+    - Empty people list
+    - Empty dishes list
+    - Negative prices (treated as 0)
+    - Dish with no one eating it (skipped)
+    - Negative or zero ratios (ignored)
+    
     Args:
         people_ids: List of person IDs
         dishes: List of dish dictionaries with 'id' and 'price'
@@ -22,10 +30,22 @@ def calculate_consumption(
     Returns:
         Tuple of (consumption_map, total_bill_price)
     """
+    # Edge case: no people
+    if not people_ids:
+        return {}, 0.0
+    
     raw_consumption = {pid: 0.0 for pid in people_ids}
     total_bill_price = 0.0
 
+    # Edge case: no dishes
+    if not dishes:
+        return raw_consumption, 0.0
+
     for dish in dishes:
+        # Edge case: negative or zero price
+        if dish['price'] <= 0:
+            continue
+            
         total_bill_price += dish['price']
         
         # Get ratios for this dish
@@ -36,11 +56,13 @@ def calculate_consumption(
             r = 0
             if pid in ratios and dish['id'] in ratios[pid]:
                 r = ratios[pid][dish['id']]
+            # Edge case: only positive ratios are valid
             if r > 0:
                 dish_ratios[pid] = r
                 total_units += r
         
         # Distribute price proportionally
+        # Edge case: no one eating this dish (skip distribution)
         if total_units > 0:
             unit_price = dish['price'] / total_units
             for pid, r in dish_ratios.items():
@@ -57,7 +79,12 @@ def calculate_final_costs(
 ) -> Dict[str, float]:
     """
     Calculate final costs including cover payments.
-    Covers are direct payments; remaining amount is split by consumption ratios.
+    
+    New Logic:
+    1. Covers are split equally among all people
+    2. Use priority queue to process people from lowest to highest consumption
+    3. If cover exceeds a person's share, the excess is redistributed to remaining people
+    4. This ensures fair distribution with edge case handling
     
     Args:
         people_ids: List of person IDs
@@ -68,25 +95,91 @@ def calculate_final_costs(
     Returns:
         Map of person_id -> final cost
     """
+    # Edge case: no people
+    if not people_ids:
+        return {}
+    
+    # Edge case: no bill
+    if total_bill_price <= 0:
+        return {pid: 0.0 for pid in people_ids}
+    
+    # Calculate total cover amount
     total_covered = sum(c['amount'] for c in covers)
+    
+    # Edge case: covers exceed or equal total bill
+    if total_covered >= total_bill_price:
+        # Everyone pays nothing except those who covered
+        final_cost = {pid: 0.0 for pid in people_ids}
+        for c in covers:
+            if c['person_id'] in final_cost:
+                final_cost[c['person_id']] += c['amount']
+        return final_cost
+    
+    # Track who covered what (for adding back at the end)
     cover_map = {pid: 0.0 for pid in people_ids}
     for c in covers:
         if c['person_id'] in cover_map:
             cover_map[c['person_id']] += c['amount']
-
-    # Calculate remaining amount to split after covers
-    remaining_to_split = total_bill_price - total_covered
-
-    final_cost = {}
+    
+    # Calculate initial equal split of cover amount
+    num_people = len(people_ids)
+    cover_per_person = total_covered / num_people
+    
+    # Create priority queue: (adjusted_cost, person_id)
+    # adjusted_cost = raw consumption - equal share of cover
+    heap = []
     for pid in people_ids:
-        if remaining_to_split > 0 and total_bill_price > 0:
-            # Your share = (consumption ratio) * remaining amount + your covers
-            consumption_ratio = raw_consumption[pid] / total_bill_price
-            final_cost[pid] = (consumption_ratio * remaining_to_split) + cover_map[pid]
+        # Calculate this person's share of the bill before cover discount
+        consumption_share = raw_consumption[pid]
+        # Apply equal cover discount
+        adjusted_cost = consumption_share - cover_per_person
+        heapq.heappush(heap, (adjusted_cost, pid))
+    
+    # Final costs dictionary
+    final_cost = {pid: 0.0 for pid in people_ids}
+    
+    # Process people from lowest cost to highest
+    remaining_people = set(people_ids)
+    remaining_cover_pool = total_covered  # Track remaining cover to redistribute
+    
+    while heap and remaining_people:
+        adjusted_cost, pid = heapq.heappop(heap)
+        
+        if pid not in remaining_people:
+            continue
+        
+        # Recalculate equal share of remaining cover among remaining people
+        if len(remaining_people) > 0:
+            equal_cover_share = remaining_cover_pool / len(remaining_people)
         else:
-            # Bill is fully covered or no bill
-            final_cost[pid] = cover_map[pid]
-
+            equal_cover_share = 0
+        
+        # This person's actual consumption
+        consumption = raw_consumption[pid]
+        
+        # Cost after applying cover discount
+        cost_after_cover = consumption - equal_cover_share
+        
+        # Edge case: cover exceeds this person's consumption
+        if cost_after_cover <= 0:
+            # This person pays nothing from the bill portion
+            final_cost[pid] = 0.0
+            
+            # The excess cover is redistributed
+            excess = equal_cover_share - consumption
+            remaining_cover_pool -= (equal_cover_share - excess)
+        else:
+            # Normal case: person pays reduced amount
+            final_cost[pid] = cost_after_cover
+            remaining_cover_pool -= equal_cover_share
+        
+        # Remove this person from remaining pool
+        remaining_people.remove(pid)
+    
+    # Add back the cover amounts paid by each person
+    for pid in people_ids:
+        final_cost[pid] += cover_map[pid]
+    
     return final_cost
 
 
@@ -100,6 +193,12 @@ def calculate_balances(
     Calculate net balances: paid - cost.
     Positive = owed money, Negative = owes money
     
+    Edge cases handled:
+    - Empty people list
+    - Negative payment amounts (treated as 0)
+    - Multiple payments from same person (summed)
+    - Person in payments but not in people_ids (ignored)
+    
     Args:
         people_ids: List of person IDs
         final_costs: Map of person_id -> final cost
@@ -109,14 +208,23 @@ def calculate_balances(
     Returns:
         List of balance dicts with 'id' and 'amount'
     """
+    # Edge case: no people
+    if not people_ids:
+        return []
+    
     paid_map = {pid: 0.0 for pid in people_ids}
+    
+    # Process payments with edge case handling
     for p in payments:
         if p['person_id'] in paid_map:
-            paid_map[p['person_id']] += p['amount']
+            # Edge case: negative payments treated as 0
+            amount = max(0.0, p.get('amount', 0.0))
+            paid_map[p['person_id']] += amount
 
     balances = []
     for pid in people_ids:
-        net = paid_map[pid] - final_costs[pid]
+        net = paid_map[pid] - final_costs.get(pid, 0.0)
+        # Filter out negligible amounts (floating point errors)
         if abs(net) > threshold:
             balances.append({"id": pid, "amount": net})
 
@@ -131,6 +239,12 @@ def calculate_settlements(
     Calculate optimal settlement transactions.
     Strategy: Each debtor pays their full debt to one creditor (1 outgoing tx per debtor).
     
+    Edge cases handled:
+    - Empty balances list
+    - All positive or all negative balances (unbalanced scenario)
+    - Single person in balances
+    - Very small amounts (filtered by threshold)
+    
     Args:
         balances: List of balance dicts with 'id' and 'amount'
         people_names: Map of person_id -> name for output
@@ -138,6 +252,10 @@ def calculate_settlements(
     Returns:
         List of settlement dicts with debtor/creditor info and amount
     """
+    # Edge case: no balances or single person
+    if not balances or len(balances) <= 1:
+        return []
+    
     # Work with a copy to avoid modifying the original
     balances = [{"id": b["id"], "amount": b["amount"]} for b in balances]
     settlements = []
@@ -155,12 +273,16 @@ def calculate_settlements(
         debtor = balances[0]
         creditor = balances[-1]
         
-        # Sanity check: debtor should be negative, creditor positive
-        if debtor["amount"] >= 0 or creditor["amount"] <= 0:
+        # Edge case: debtor should be negative, creditor positive
+        # If not, the system is unbalanced (shouldn't happen with correct input)
+        if debtor["amount"] >= -threshold or creditor["amount"] <= threshold:
             break
         
         # Transfer amount is what the debtor owes
         transfer_amount = abs(debtor["amount"])
+        
+        # Edge case: ensure transfer doesn't exceed what creditor is owed
+        transfer_amount = min(transfer_amount, creditor["amount"])
         
         settlements.append({
             "debtor_id": debtor["id"],
@@ -172,7 +294,7 @@ def calculate_settlements(
         
         # Apply the transfer
         creditor["amount"] -= transfer_amount  # Reduce what creditor is owed
-        debtor["amount"] += transfer_amount    # Clear debtor's debt
+        debtor["amount"] += transfer_amount    # Clear/reduce debtor's debt
         
         # Remove settled parties (those with balance ≈ 0)
         balances = [b for b in balances if abs(b["amount"]) > threshold]
