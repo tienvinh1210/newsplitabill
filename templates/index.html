@@ -437,6 +437,15 @@
         let sessionId = null;
         const TAG_COLORS = ['#d32f2f', '#1976d2', '#388e3c', '#fbc02d', '#7b1fa2', '#f57c00', '#0097a7', '#5d4037'];
 
+        function showLoading() {
+            const loading = document.getElementById('loadingRoot');
+            const home = document.getElementById('homeRoot');
+            const app = document.getElementById('appRoot');
+            if (loading) loading.style.display = 'flex';
+            if (home) home.style.display = 'none';
+            if (app) app.style.display = 'none';
+        }
+
         function hideLoading() {
             const loading = document.getElementById('loadingRoot');
             if (loading) loading.style.display = 'none';
@@ -474,32 +483,54 @@
         }
 
         async function startNewBill() {
+            // Show loading screen while creating session
+            showLoading();
+            try {
             await newSession();
+                // Session created, show app and render
             showApp();
             render();
+            } catch (e) {
+                // If creation fails, show home page
+                console.error('Failed to create session:', e);
+                alert('Failed to create session. Please try again.');
+                showHome();
+            }
         }
 
         async function newSession() {
+            // Show loading while creating
+            showLoading();
             const res = await fetch('/sessions', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({state})
             });
             if (!res.ok) {
-                alert('Failed to create session');
-                return;
+                const errorText = await res.text();
+                throw new Error(`Failed to create session: ${errorText}`);
             }
             const data = await res.json();
             sessionId = data.id;
             window.history.replaceState({}, '', `?id=${sessionId}`);
             updateSessionInfo();
-            alert('Shared link created. Others can edit using the link.');
-            showApp();
+            // No alert - just jump directly to the app
+            // The loading screen will be hidden when showApp() is called
         }
 
         async function saveSession() {
             if (!sessionId) {
+                // Show loading while creating new session
+                showLoading();
+                try {
                 await newSession();
+                    // After creating, show app (loading will be hidden)
+                    showApp();
+                } catch (e) {
+                    console.error('Failed to create session:', e);
+                    alert('Failed to create session. Please try again.');
+                    showApp(); // Still show app even if save failed
+                }
                 return;
             }
             const res = await fetch(`/sessions/${sessionId}`, {
@@ -847,7 +878,7 @@
             document.addEventListener('DOMContentLoaded', initSessionFromUrl);
         } else {
             // DOM already loaded, run immediately
-            initSessionFromUrl();
+        initSessionFromUrl();
         }
     </script>
 </body>
