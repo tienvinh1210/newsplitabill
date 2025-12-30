@@ -224,10 +224,10 @@ async def create_session(payload: SessionPayload):
                     await ensure_table_exists(conn)
                     # Retry the insert
                     result = await conn.execute(
-                "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
-                session_id,
+                        "INSERT INTO sessions (id, state) VALUES ($1, $2::jsonb)",
+                        session_id,
                         state_json,
-            )
+                    )
                     print(f"Session created after table creation: {result}")
                 else:
                     raise
@@ -258,7 +258,7 @@ async def get_session(session_id: str):
                 row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
             else:
                 async with conn.transaction():
-            row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
+                    row = await conn.fetchrow("SELECT state FROM sessions WHERE id=$1", session_id)
         if not row:
             raise HTTPException(status_code=404, detail="Session not found")
         # state is stored as JSONB; ensure we return a dict
@@ -293,11 +293,11 @@ async def update_session(session_id: str, payload: SessionPayload):
                 )
             else:
                 async with conn.transaction():
-            result = await conn.execute(
-                "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
-                json.dumps(payload.state),
-                session_id,
-            )
+                    result = await conn.execute(
+                        "UPDATE sessions SET state=$1::jsonb, updated_at=NOW() WHERE id=$2",
+                        json.dumps(payload.state),
+                        session_id,
+                    )
         if result.endswith("UPDATE 0"):
             raise HTTPException(status_code=404, detail="Session not found")
         return {"id": session_id}

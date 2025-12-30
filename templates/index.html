@@ -486,10 +486,10 @@
             // Show loading screen while creating session
             showLoading();
             try {
-            await newSession();
+                await newSession();
                 // Session created, show app and render
-            showApp();
-            render();
+                showApp();
+                render();
             } catch (e) {
                 // If creation fails, show home page
                 console.error('Failed to create session:', e);
@@ -523,7 +523,7 @@
                 // Show loading while creating new session
                 showLoading();
                 try {
-                await newSession();
+                    await newSession();
                     // After creating, show app (loading will be hidden)
                     showApp();
                 } catch (e) {
@@ -878,7 +878,7 @@
             document.addEventListener('DOMContentLoaded', initSessionFromUrl);
         } else {
             // DOM already loaded, run immediately
-        initSessionFromUrl();
+            initSessionFromUrl();
         }
     </script>
 </body>
