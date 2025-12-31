@@ -115,7 +115,8 @@ async def get_pool():
                 db_url, 
                 min_size=1, 
                 max_size=pool_size,  # Smaller pool for session poolers
-                command_timeout=timeout  # Shorter timeout for session poolers
+                command_timeout=timeout,  # Shorter timeout for session poolers
+                statement_cache_size=0  # Does not prepare statement -> need better fix for continuous connection
             )
         except Exception as e:
             print(f"Error creating database pool: {str(e)}")
