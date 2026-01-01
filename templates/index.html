@@ -640,9 +640,11 @@
     <!-- Main app UI, hidden until a session is active -->
     <div id="appRoot" style="display: none;">
 
-        <!-- Bill Name Input (Visual only, distinct from backend state for now) -->
+        <!-- Bill Name Input -->
         <div style="text-align: center; margin-bottom: 20px;">
-            <input type="text" value="My Bill" placeholder="Bill Name"
+            <input type="text" id="billNameInput" value="My Bill" placeholder="Bill Name"
+                onchange="updateBillName(this.value); autoSave();"
+                onkeydown="handleEnter(event)"
                 style="font-size: 20px; font-weight: 700; width: 100%; max-width: 300px; border: none; border-bottom: 2px dashed #e0e0e0; color: #333; padding: 5px;">
         </div>
 
@@ -762,6 +764,7 @@
 
         <script>
             let state = {
+                billName: 'My Bill',
                 people: [{ id: 'p1', name: 'Alice' }, { id: 'p2', name: 'Bob' }, { id: 'p3', name: 'Charlie' }],
                 dishes: [{ id: 'd1', name: 'Pizza (Large)', price: 100 }, { id: 'd2', name: 'Drinks', price: 20 }],
                 ratios: { 'p1': { 'd1': 1 }, 'p2': { 'd1': 1 }, 'p3': { 'd2': 1 } },
@@ -872,6 +875,7 @@
 
                 // Initialize state with default payer
                 state = {
+                    billName: 'My Bill',
                     people: [{ id: 'p1', name: 'Alice' }, { id: 'p2', name: 'Bob' }, { id: 'p3', name: 'Charlie' }],
                     dishes: [{ id: 'd1', name: 'Pizza', price: 100 }, { id: 'd2', name: 'Drinks', price: 20 }],
                     ratios: {
@@ -941,6 +945,10 @@
                 }
                 const data = await res.json();
                 state = data.state;
+                // Backward compatibility: if billName doesn't exist, set default
+                if (!state.billName) {
+                    state.billName = 'My Bill';
+                }
                 sessionId = id;
                 window.history.replaceState({}, '', `?id=${sessionId}`);
                 updateSessionInfo();
@@ -1000,6 +1008,11 @@
             }
 
             function render() {
+                // Update bill name input from state
+                const billNameInput = document.getElementById('billNameInput');
+                if (billNameInput && state.billName) {
+                    billNameInput.value = state.billName;
+                }
                 renderMatrix();
                 renderPayments();
                 renderCovers();
@@ -1240,6 +1253,13 @@
                 validateTotals(); // Live check
             }
             function updatePersonName(id, val) { state.people.find(p => p.id === id).name = val; render(); autoSave(); }
+            function updateBillName(val) { state.billName = val || 'My Bill'; }
+            function handleEnter(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.target.blur();
+                }
+            }
             function modRatio(pid, did, delta) {
                 if (!state.ratios[pid]) state.ratios[pid] = {};
                 const current = state.ratios[pid][did] || 0;
