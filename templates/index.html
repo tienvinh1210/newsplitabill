@@ -647,11 +647,11 @@
         </div>
 
         <div class="session-bar">
-            <button onclick="newSession()">
+            <button onclick="resetSession()">
                 <svg viewBox="0 0 24 24">
                     <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                 </svg>
-                New Bill
+                Reset
             </button>
             <button onclick="copyLink()">
                 <svg viewBox="0 0 24 24">
@@ -901,6 +901,64 @@
                 // No alert - just jump directly to the app
                 showApp();
                 render();
+            }
+
+            async function resetSession() {
+                // Check if there's an active session
+                if (!sessionId) {
+                    alert('No active session to reset. Please create a new bill first.');
+                    return;
+                }
+
+                // Show confirmation dialog
+                const confirmed = confirm(
+                    '⚠️ Warning: This will reset all data in the current bill to default values.\n\n' +
+                    'All dishes, people, payments, and covers will be cleared.\n\n' +
+                    'This action cannot be undone. Do you want to continue?'
+                );
+
+                if (!confirmed) {
+                    return; // User cancelled
+                }
+
+                // Show loading while resetting
+                showLoading();
+
+                // Reset state to default values
+                state = {
+                    people: [{ id: 'p1', name: 'Alice' }, { id: 'p2', name: 'Bob' }, { id: 'p3', name: 'Charlie' }],
+                    dishes: [{ id: 'd1', name: 'Pizza', price: 100 }, { id: 'd2', name: 'Drinks', price: 20 }],
+                    ratios: {
+                        p1: { d1: 1, d2: 1 },
+                        p2: { d1: 1, d2: 0 },
+                        p3: { d1: 0, d2: 1 }
+                    },
+                    payments: [{ person_id: 'p1', amount: 120 }], // Default: 1 person paid 120 (all)
+                    paymentDetails: {},
+                    covers: [],
+                    colors: {}
+                };
+
+                // Update the current session (not create a new one)
+                try {
+                    const res = await fetch(`/sessions/${sessionId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ state })
+                    });
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        throw new Error(`Failed to reset session: ${errorText}`);
+                    }
+                    // Success - show app and render
+                    showApp();
+                    render();
+                    if (typeof showToast === 'function') showToast('Bill reset to default values');
+                } catch (e) {
+                    console.error('Error resetting session:', e);
+                    alert('Failed to reset bill. Please try again.');
+                    showApp();
+                }
             }
 
 
