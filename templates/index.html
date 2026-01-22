@@ -612,6 +612,57 @@
             opacity: 1;
             bottom: 50px;
         }
+
+        /* Star Rating Styles */
+        .rating-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .rating-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .star-rating {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            user-select: none;
+            cursor: grab;
+        }
+
+        .star-rating:active {
+            cursor: grabbing;
+        }
+
+        .star {
+            font-size: 28px;
+            color: #ddd;
+            transition: color 0.2s;
+            cursor: pointer;
+        }
+
+        .star.filled {
+            color: #ffc107;
+        }
+
+        .star-rating:hover .star {
+            color: #ffc107;
+        }
+
+        .rating-value {
+            margin-left: 10px;
+            font-size: 14px;
+            color: var(--subtle);
+            font-weight: 600;
+        }
     </style>
 </head>
 
@@ -663,6 +714,18 @@
                 Copy Link
             </button>
             <span id="sessionInfo" class="session-info"></span>
+        </div>
+
+        <div class="rating-section">
+            <label class="rating-label">Rate your experience</label>
+            <div class="star-rating" id="starRating" onmousedown="startDrag(event)" onmousemove="handleDrag(event)" onmouseup="endDrag()" onmouseleave="endDrag()" ontouchstart="startDrag(event)" ontouchmove="handleDrag(event)" ontouchend="endDrag()">
+                <span class="star" data-rating="1" onclick="updateRating(1)">★</span>
+                <span class="star" data-rating="2" onclick="updateRating(2)">★</span>
+                <span class="star" data-rating="3" onclick="updateRating(3)">★</span>
+                <span class="star" data-rating="4" onclick="updateRating(4)">★</span>
+                <span class="star" data-rating="5" onclick="updateRating(5)">★</span>
+                <span class="rating-value" id="ratingValue">0 / 5</span>
+            </div>
         </div>
 
         <div class="section" id="s1">
@@ -771,7 +834,8 @@
                 paymentDetails: {}, // Map: person_id -> "Bank Info / Note"
                 colors: {},          // Map: person_id -> hex color
                 payments: [],
-                covers: []
+                covers: [],
+                rating: 0            // User rating (0-5)
             };
             let sessionId = null;
             const TAG_COLORS = [
@@ -886,7 +950,8 @@
                     payments: [{ person_id: 'p1', amount: 120 }], // Default: 1 person paid 120 (all)
                     paymentDetails: {},
                     covers: [],
-                    colors: {}
+                    colors: {},
+                    rating: 0
                 };
 
                 const res = await fetch('/sessions', {
@@ -948,6 +1013,10 @@
                 // Backward compatibility: if billName doesn't exist, set default
                 if (!state.billName) {
                     state.billName = 'My Bill';
+                }
+                // Backward compatibility: if rating doesn't exist, set default
+                if (state.rating === undefined) {
+                    state.rating = 0;
                 }
                 sessionId = id;
                 window.history.replaceState({}, '', `?id=${sessionId}`);
@@ -1016,6 +1085,7 @@
                 renderMatrix();
                 renderPayments();
                 renderCovers();
+                renderRating();
             }
 
             function validateNumberInput(e) {
@@ -1397,6 +1467,67 @@
 
                 // 3. Auto-save
                 autoSave();
+            }
+
+            // Star Rating Functions
+            let isDragging = false;
+            let currentRating = 0;
+
+            function getRatingFromEvent(e) {
+                const starRating = document.getElementById('starRating');
+                const rect = starRating.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const x = clientX - rect.left;
+                const starWidth = rect.width / 5;
+                const rating = Math.min(5, Math.max(1, Math.ceil(x / starWidth)));
+                return rating;
+            }
+
+            function updateRating(rating) {
+                currentRating = rating;
+                state.rating = rating;
+                const stars = document.querySelectorAll('.star');
+                const ratingValue = document.getElementById('ratingValue');
+                
+                stars.forEach((star, index) => {
+                    if (index < rating) {
+                        star.classList.add('filled');
+                    } else {
+                        star.classList.remove('filled');
+                    }
+                });
+                
+                ratingValue.textContent = `${rating} / 5`;
+                autoSave();
+            }
+
+            function startDrag(e) {
+                // Don't start drag if clicking directly on a star
+                if (e.target.classList.contains('star')) {
+                    return;
+                }
+                isDragging = true;
+                e.preventDefault();
+                const rating = getRatingFromEvent(e);
+                updateRating(rating);
+            }
+
+            function handleDrag(e) {
+                if (!isDragging) return;
+                e.preventDefault();
+                const rating = getRatingFromEvent(e);
+                updateRating(rating);
+            }
+
+            function endDrag() {
+                isDragging = false;
+            }
+
+            // Initialize rating display
+            function renderRating() {
+                if (state.rating !== undefined) {
+                    updateRating(state.rating);
+                }
             }
             // Initialize as soon as DOM is ready
             // Check for session ID immediately to avoid showing home page
