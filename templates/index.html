@@ -653,15 +653,46 @@
             color: #ffc107;
         }
 
-        .star-rating:hover .star {
-            color: #ffc107;
-        }
-
         .rating-value {
             margin-left: 10px;
             font-size: 14px;
             color: var(--subtle);
             font-weight: 600;
+        }
+
+        /* Comment Section Styles */
+        .comment-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .comment-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .comment-textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+
+        .comment-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
         }
     </style>
 </head>
@@ -718,7 +749,7 @@
 
         <div class="rating-section">
             <label class="rating-label">Rate your experience</label>
-            <div class="star-rating" id="starRating" onmousedown="startDrag(event)" onmousemove="handleDrag(event)" onmouseup="endDrag()" onmouseleave="endDrag()" ontouchstart="startDrag(event)" ontouchmove="handleDrag(event)" ontouchend="endDrag()">
+            <div class="star-rating" id="starRating" onmousedown="startDrag(event)" onmousemove="handleDrag(event); previewRating(event)" onmouseup="endDrag()" onmouseleave="endDrag(); clearPreview()" ontouchstart="startDrag(event)" ontouchmove="handleDrag(event)" ontouchend="endDrag()">
                 <span class="star" data-rating="1" onclick="updateRating(1)">★</span>
                 <span class="star" data-rating="2" onclick="updateRating(2)">★</span>
                 <span class="star" data-rating="3" onclick="updateRating(3)">★</span>
@@ -822,6 +853,22 @@
             </div>
         </div>
 
+        <div class="section" id="s6">
+            <h2>6. Comments</h2>
+
+            <p class="section-note">
+                Add any comments or notes about this bill.
+            </p>
+
+            <div class="comment-section">
+                <label class="comment-label">Your Comments</label>
+                <textarea id="commentTextarea" class="comment-textarea" 
+                    placeholder="Write your comments here..."
+                    onchange="updateComment(this.value); autoSave();"
+                    oninput="updateComment(this.value); autoSave();"></textarea>
+            </div>
+        </div>
+
         <!-- Toast Notification -->
         <div id="toast" class="toast-notification">Link copied to clipboard!</div>
 
@@ -835,7 +882,8 @@
                 colors: {},          // Map: person_id -> hex color
                 payments: [],
                 covers: [],
-                rating: 0            // User rating (0-5)
+                rating: 0,           // User rating (0-5)
+                comment: ''         // User comment
             };
             let sessionId = null;
             const TAG_COLORS = [
@@ -951,7 +999,8 @@
                     paymentDetails: {},
                     covers: [],
                     colors: {},
-                    rating: 0
+                    rating: 0,
+                    comment: ''
                 };
 
                 const res = await fetch('/sessions', {
@@ -1017,6 +1066,10 @@
                 // Backward compatibility: if rating doesn't exist, set default
                 if (state.rating === undefined) {
                     state.rating = 0;
+                }
+                // Backward compatibility: if comment doesn't exist, set default
+                if (state.comment === undefined) {
+                    state.comment = '';
                 }
                 sessionId = id;
                 window.history.replaceState({}, '', `?id=${sessionId}`);
@@ -1086,6 +1139,7 @@
                 renderPayments();
                 renderCovers();
                 renderRating();
+                renderComment();
             }
 
             function validateNumberInput(e) {
@@ -1489,11 +1543,19 @@
                 const stars = document.querySelectorAll('.star');
                 const ratingValue = document.getElementById('ratingValue');
                 
+                // Clear all stars first
+                stars.forEach((star) => {
+                    star.classList.remove('filled');
+                    star.style.color = ''; // Reset inline style
+                });
+                
+                // Fill only the stars up to the rating (1-indexed, so rating 3 means fill stars 0, 1, 2)
                 stars.forEach((star, index) => {
                     if (index < rating) {
                         star.classList.add('filled');
+                        star.style.color = '#ffc107';
                     } else {
-                        star.classList.remove('filled');
+                        star.style.color = '#ddd';
                     }
                 });
                 
@@ -1521,12 +1583,51 @@
 
             function endDrag() {
                 isDragging = false;
+                clearPreview();
+            }
+
+            function previewRating(e) {
+                if (isDragging) return; // Don't preview while dragging
+                const rating = getRatingFromEvent(e);
+                const stars = document.querySelectorAll('.star');
+                stars.forEach((star, index) => {
+                    if (index < rating) {
+                        star.style.color = '#ffc107';
+                    } else {
+                        star.style.color = '#ddd';
+                    }
+                });
+            }
+
+            function clearPreview() {
+                if (isDragging) return;
+                const stars = document.querySelectorAll('.star');
+                stars.forEach((star) => {
+                    // Reset to filled/unfilled state
+                    if (star.classList.contains('filled')) {
+                        star.style.color = '#ffc107';
+                    } else {
+                        star.style.color = '#ddd';
+                    }
+                });
             }
 
             // Initialize rating display
             function renderRating() {
                 if (state.rating !== undefined) {
                     updateRating(state.rating);
+                }
+            }
+
+            // Comment functions
+            function updateComment(value) {
+                state.comment = value || '';
+            }
+
+            function renderComment() {
+                const commentTextarea = document.getElementById('commentTextarea');
+                if (commentTextarea && state.comment !== undefined) {
+                    commentTextarea.value = state.comment;
                 }
             }
             // Initialize as soon as DOM is ready
