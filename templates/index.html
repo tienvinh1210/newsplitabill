@@ -762,16 +762,6 @@
         <div class="section" id="s1">
             <h2>1. Consumption</h2>
 
-            <p class="section-note">
-                Input dishes and prices on the left. Add people on the right.
-                Adjust how much each person ate using the + / - buttons.<br>
-                <br>TODO:<br>
-                - DONE Fix button placement -> spamable buttons (in other sections as well)<br>
-                - KINDA Better increment/decrement buttons<br>
-                - DONE Colour tagging for people<br>
-                - Gradient for portions eaten<br>
-            </p>
-
             <div class="matrix-container">
                 <div class="scroll-viewport">
                     <table id="matrixTable">
@@ -787,10 +777,6 @@
 
         <div class="section" id="s2">
             <h2>2. Who Paid?</h2>
-
-            <p class="section-note">
-                Log who actually paid the restaurant bill (and how much).
-            </p>
 
             <table class="simple-table" id="paymentTable">
                 <thead>
@@ -809,10 +795,6 @@
         <div class="section" id="s3">
             <h2>3. Who is Covering? ("Bao")</h2>
 
-            <p class="section-note">
-                If someone is treating others (Bao Bữa), add them here.
-            </p>
-
             <table class="simple-table" id="coverTable">
                 <thead>
                     <tr>
@@ -829,36 +811,12 @@
         <div class="section" id="s4">
             <h2>4. Settlement</h2>
 
-            <p class="section-note">
-                Click below to generate the final list of who owes whom.
-                <br>TODO:<br>
-                - Could make it dynamic
-            </p>
-
             <button id="btnCalculate" class="btn-calc" onclick="calculate()">Calculate Settlements</button>
             <ul id="resultList" style="margin-top: 25px; list-style: none; padding: 0;"></ul>
         </div>
 
-        <div class="section" id="s5">
-            <h2>5. Data</h2>
-
-            <p class="section-note">
-                Save or Load your current session data.
-            </p>
-
-            <textarea id="jsonArea" class="json-area"></textarea>
-            <div>
-                <button onclick="saveData()">Get JSON</button>
-                <button onclick="loadData()">Load JSON</button>
-            </div>
-        </div>
-
         <div class="section" id="s6">
-            <h2>6. Comments</h2>
-
-            <p class="section-note">
-                Add any comments or notes about this bill.
-            </p>
+            <h2>5. Comments</h2>
 
             <div class="comment-section">
                 <label class="comment-label">Your Comments</label>
@@ -1419,8 +1377,6 @@
                     window.scrollBy(0, tbody.lastElementChild.offsetHeight);
                 }
             }
-            function saveData() { document.getElementById('jsonArea').value = JSON.stringify(state, null, 2); }
-            function loadData() { try { state = JSON.parse(document.getElementById('jsonArea').value); render(); } catch (e) { alert('Invalid JSON data'); } }
 
             async function calculate() {
                 // DEBUG: Toast start
